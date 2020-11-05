@@ -185,6 +185,7 @@ class Trainer:
         prediction_loss_only=False,
         do_save_full_model: bool = True,
         do_save_adapters: bool = False,
+        do_save_input_embeddings: bool = False,
         do_save_adapter_fusion: bool = False,
         adapter_names: Optional[List[List[str]]] = None,
         tb_writer: Optional["SummaryWriter"] = None,
@@ -220,6 +221,7 @@ class Trainer:
         # adapters used
         self.do_save_full_model = do_save_full_model
         self.do_save_adapters = do_save_adapters
+        self.do_save_input_embeddings = do_save_input_embeddings
         self.do_save_adapter_fusion = do_save_adapter_fusion
         self.adapter_names = adapter_names
         if is_torch_tpu_available():
@@ -711,6 +713,8 @@ class Trainer:
             self.model.save_all_adapters(output_dir)
         if self.do_save_adapter_fusion:
             self.model.save_all_adapter_fusions(output_dir)
+        if self.do_save_input_embeddings:
+            self.model.save_input_embeddings(output_dir)
         if self.do_save_full_model:
             self.model.save_pretrained(output_dir)
 
@@ -726,6 +730,8 @@ class Trainer:
             self.model.save_all_adapters(output_dir)
         if self.do_save_adapter_fusion:
             self.model.save_all_adapter_fusions(output_dir)
+        if self.do_save_input_embeddings:
+            self.model.save_input_embeddings(output_dir)
         if self.do_save_full_model:
             self.model.save_pretrained(output_dir)
 

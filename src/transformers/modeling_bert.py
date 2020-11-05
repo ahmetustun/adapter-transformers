@@ -168,6 +168,7 @@ class BertEmbeddings(nn.Module):
         # any TensorFlow checkpoint file
         self.LayerNorm = BertLayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.config = config
 
     def forward(self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None):
         if input_ids is not None:
@@ -192,6 +193,9 @@ class BertEmbeddings(nn.Module):
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
+
+    def reset_word_embeddings(self):
+        self.word_embeddings.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
 
 
 class BertSelfAttention(nn.Module):
@@ -679,7 +683,19 @@ class BertModel(BertModelAdaptersMixin, BertPreTrainedModel):
         return self.embeddings.word_embeddings
 
     def set_input_embeddings(self, value):
-        self.embeddings.word_embeddings = value
+            self.embeddings.word_embeddings = value
+
+    def reset_input_embeddings(self, special_token_ids=None):
+        if special_token_ids is not None:
+            special_token_embs = self.embeddings.word_embeddings(special_token_ids).detach().clone()
+
+        self.embeddings.reset_word_embeddings()
+
+        if special_token_ids is not None:
+            self.embeddings.word_embeddings.weight.data[special_token_ids] = special_token_embs
+
+    def load_input_embeddings(self, input_embeddings_path):
+        self.get_input_embeddings().load_state_dict(torch.load(os.path.join(input_embeddings_path, "INPUT_EMBEDDINGS")))
 
     def _prune_heads(self, heads_to_prune):
         """ Prunes heads of the model.
@@ -1094,7 +1110,7 @@ class BertLMHeadModel(ModelWithHeadsAdaptersMixin, BertPreTrainedModel):
 
 
 @add_start_docstrings("""Bert Model with a `language modeling` head on top. """, BERT_START_DOCSTRING)
-class BertForMaskedLM(BertPreTrainedModel):
+class BertForMaskedLM(ModelWithHeadsAdaptersMixin, BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         assert (
@@ -1124,6 +1140,7 @@ class BertForMaskedLM(BertPreTrainedModel):
         encoder_attention_mask=None,
         output_attentions=None,
         output_hidden_states=None,
+        adapter_names=None,
         **kwargs
     ):
         r"""
@@ -1173,10 +1190,13 @@ class BertForMaskedLM(BertPreTrainedModel):
             encoder_attention_mask=encoder_attention_mask,
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
+            adapter_names=adapter_names,
         )
 
         sequence_output = outputs[0]
-        prediction_scores = self.cls(sequence_output)
+        prediction_scores = self.cls(
+            sequence_output, inv_lang_adapter=self.bert.get_invertible_lang_adapter(adapter_names)
+        )
 
         outputs = (prediction_scores,) + outputs[2:]  # Add hidden states and attention if they are here
 

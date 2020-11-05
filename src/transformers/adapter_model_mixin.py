@@ -990,6 +990,14 @@ class ModelAdaptersMixin(ABC):
             param.requires_grad = not freeze
         self.model_freezed = freeze
 
+    def unfreeze_input_embeddings(self, unfreeze=True):
+        """Unfreezes input embeddings of the model.
+        """
+        # first freeze/ unfreeze all model weights
+        for param in self.base_model.get_input_embeddings().parameters():
+            param.requires_grad = unfreeze
+        self.model_input_embeddings_unfreezed = unfreeze
+
 
 @inherit_doc
 class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):
@@ -1014,6 +1022,9 @@ class ModelWithHeadsAdaptersMixin(ModelAdaptersMixin):
     def train_adapter(self, adapter_names: list):
         """Sets the model into mode for training the given adapters."""
         self.base_model.train_adapter(adapter_names)
+
+    def train_adapter_with_new_vocab(self, adapter_names: list):
+        self.base_model.train_adapter_with_new_vocab(adapter_names)
 
     def train_fusion(self, adapter_names: list):
         """Sets the model in mode for training of adapter fusion determined by a list of adapter names."""

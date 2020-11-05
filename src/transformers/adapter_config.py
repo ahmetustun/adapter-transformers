@@ -161,7 +161,26 @@ class HoulsbyConfig(AdapterConfig):
     reduction_factor: int = 16
 
 
-ADAPTER_CONFIG_MAP = {"pfeiffer": PfeifferConfig(), "houlsby": HoulsbyConfig()}
+@dataclass
+class UstunConfig(AdapterConfig):
+    """
+    The adapter architecture proposed by Pfeiffer et. al., 2020.
+    Described in https://arxiv.org/pdf/2005.00247.pdf.
+    """
+
+    original_ln_before: bool = True
+    original_ln_after: bool = True
+    residual_before_ln: bool = True
+    adapter_residual_before_ln: bool = False
+    ln_before: bool = False
+    ln_after: bool = False
+    mh_adapter: bool = False
+    output_adapter: bool = True
+    non_linearity: str = "relu"
+    reduction_factor: int = 16
+
+
+ADAPTER_CONFIG_MAP = {"pfeiffer": PfeifferConfig(), "houlsby": HoulsbyConfig(), "ustun": UstunConfig()}
 
 DEFAULT_ADAPTER_CONFIG = "pfeiffer"
 

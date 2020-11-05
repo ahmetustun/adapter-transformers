@@ -490,7 +490,9 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         # language adapters
         for language in self.config.adapters.adapter_list(AdapterType.text_lang):
             self.encoder.add_adapter(language, AdapterType.text_lang)
-            self.add_invertible_lang_adapter(language)
+
+            if self.config.adapters.get(language)["invertible_adapter"] is not None:
+                self.add_invertible_lang_adapter(language)
         # task adapters
         for task in self.config.adapters.adapter_list(AdapterType.text_task):
             self.encoder.add_adapter(task, AdapterType.text_task)
@@ -506,6 +508,17 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
         adapter_names_flat = flatten_adapter_names(adapter_names)
         self.encoder.enable_adapters(adapter_names, True, False)
         self.enable_invertible_adapters(adapter_names_flat)
+        # use the adapters to be trained by default in every forward pass
+        self.set_active_adapters(adapter_names)
+
+    def train_adapter_with_new_vocab(self, adapter_names: list):
+        """Sets the model into mode for training the given adapters and new input layer."""
+        self.train()
+        self.freeze_model(True)
+        self.unfreeze_input_embeddings(True)
+        adapter_names_flat = flatten_adapter_names(adapter_names)
+        self.encoder.enable_adapters(adapter_names, True, False)
+
         # use the adapters to be trained by default in every forward pass
         self.set_active_adapters(adapter_names)
 
@@ -536,7 +549,8 @@ class BertModelAdaptersMixin(InvertibleAdaptersMixin, ModelAdaptersMixin):
             self.config.adapters.set_config(adapter_type, config or DEFAULT_ADAPTER_CONFIG)
         self.config.adapters.add(adapter_name, adapter_type, config=config)
         self.encoder.add_adapter(adapter_name, adapter_type)
-        if adapter_type == AdapterType.text_lang:
+        if adapter_type == AdapterType.text_lang and \
+                self.config.adapters.get(adapter_name)["invertible_adapter"] is not None:
             self.add_invertible_lang_adapter(adapter_name)
 
     def _add_fusion_layer(self, adapter_names):

@@ -321,6 +321,34 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
         else:
             raise NotImplementedError
 
+    def reset_input_embeddings(self):
+        """
+        Re-initialize the model's all input embeddings but the special tokens.
+
+        Returns:
+            :obj:`nn.Module`:
+                A torch module mapping vocabulary to hidden states.
+        """
+        base_model = getattr(self, self.base_model_prefix, self)
+        if base_model is not self:
+            return base_model.reset_input_embeddings()
+        else:
+            raise NotImplementedError
+
+    def load_input_embeddings(self, input_embeddings_path):
+        """
+        Re-initialize the model's all input embeddings but the special tokens.
+
+        Returns:
+            :obj:`nn.Module`:
+                A torch module mapping vocabulary to hidden states.
+        """
+        base_model = getattr(self, self.base_model_prefix, self)
+        if base_model is not self:
+            return base_model.load_input_embeddings(input_embeddings_path)
+        else:
+            raise NotImplementedError
+
     def set_input_embeddings(self, value: nn.Module):
         """
         Set model's input embeddings
@@ -444,6 +472,48 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
 
         return new_embeddings
 
+    def reinit_token_embeddings(self, new_num_tokens, keep_special_tokens=False, special_token_pairs=None):
+
+        base_model = getattr(self, self.base_model_prefix, self)  # get the base model if needed
+        model_embeds = base_model._reinit_token_embeddings(new_num_tokens, keep_special_tokens, special_token_pairs)
+
+        # Update base model and current model config
+        self.config.vocab_size = new_num_tokens
+        base_model.vocab_size = new_num_tokens
+
+        # Tie weights again if needed
+        self.tie_weights()
+
+        return model_embeds
+
+    def _reinit_token_embeddings(self, new_num_tokens, keep_special_tokens=False, special_token_pairs=None):
+        old_embeddings = self.get_input_embeddings()
+        new_embeddings = self._get_reinitialized_embeddings(old_embeddings, new_num_tokens, keep_special_tokens,
+                                                            special_token_pairs)
+        self.set_input_embeddings(new_embeddings)
+        return self.get_input_embeddings()
+
+    def _get_reinitialized_embeddings(
+        self, old_embeddings: torch.nn.Embedding, new_num_tokens, keep_special_tokens=False,
+            special_token_pairs=None) -> torch.nn.Embedding:
+
+        old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
+
+        # Build new embeddings
+        new_embeddings = nn.Embedding(new_num_tokens, old_embedding_dim)
+        new_embeddings.to(old_embeddings.weight.device)
+
+        # initialize all new embeddings (in particular added tokens)
+        self._init_weights(new_embeddings)
+
+        # Copy special token embeddings from the previous weights if needed
+        if keep_special_tokens:
+            new_special_token_ids = torch.tensor(special_token_pairs[0])
+            old_special_token_ids = torch.tensor(special_token_pairs[1])
+            new_embeddings.weight.data[new_special_token_ids] = old_embeddings.weight.data[old_special_token_ids]
+
+        return new_embeddings
+
     def init_weights(self):
         """ Initialize and prunes weights if needed. """
         # Initialize weights
@@ -503,6 +573,43 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin):
         else:
             model_to_save.config.save_pretrained(save_directory)
             torch.save(model_to_save.state_dict(), output_model_file)
+
+        logger.info("Model weights saved in {}".format(output_model_file))
+
+    def save_input_embeddings(self, save_directory):
+        """ Save model's input embeddings and its configuration file to a directory
+
+            Arguments:
+                save_directory: directory to which to save.
+        """
+        if os.path.isfile(save_directory):
+            logger.error("Provided path ({}) should be a directory, not a file".format(save_directory))
+            return
+        os.makedirs(save_directory, exist_ok=True)
+
+        # Only save the model itself if we are using distributed training
+        model_to_save = self.module if hasattr(self, "module") else self
+
+        # Attach architecture to the config
+        model_to_save.config.architectures = [model_to_save.__class__.__name__]
+
+        # If we save using the predefined names, we can load using `from_pretrained`
+        output_model_file = os.path.join(save_directory, "INPUT_EMBEDDINGS")
+
+        # Only save model's input embeddings
+        model_input_emb = model_to_save.get_input_embeddings()
+
+        if getattr(self.config, "xla_device", False):
+            import torch_xla.core.xla_model as xm
+
+            if xm.is_master_ordinal():
+                # Save configuration file
+                model_to_save.config.save_pretrained(save_directory)
+            # xm.save takes care of saving only from master
+            xm.save(model_input_emb.state_dict(), output_model_file)
+        else:
+            model_to_save.config.save_pretrained(save_directory)
+            torch.save(model_input_emb.state_dict(), output_model_file)
 
         logger.info("Model weights saved in {}".format(output_model_file))
 
